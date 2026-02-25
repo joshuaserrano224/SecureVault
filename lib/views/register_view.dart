@@ -5,6 +5,8 @@ import '../viewmodels/auth_viewmodel.dart';
 import '../utils/validators.dart';
 import 'widgets/cyber_widgets.dart';
 
+//By Reogie Mabawad
+
 class RegisterView extends StatefulWidget {
   const RegisterView({super.key});
   @override

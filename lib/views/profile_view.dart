@@ -5,6 +5,8 @@ import '../viewmodels/profile_viewmodel.dart';
 import '../viewmodels/auth_viewmodel.dart';
 import '../views/login_view.dart';
 
+//By Reogie Mabawad
+
 class ProfileView extends StatelessWidget {
   const ProfileView({super.key});
 
@@ -61,7 +63,7 @@ class ProfileView extends StatelessWidget {
                         _buildDataCard([
                           _buildSwitchRow(
                             "Biometric Access",
-                            "Fingerprint/FaceID enrollment",
+                            "Fingerprint enrollment",
                             profileVM.biometricEnabled,
                             isDark, textColor, subTextColor,
                             () => profileVM.toggleBiometricSupport(!profileVM.biometricEnabled, authVM.currentUser?.id),
