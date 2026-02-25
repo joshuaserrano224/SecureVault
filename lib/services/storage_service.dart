@@ -18,3 +18,5 @@ class StorageService {
     await _storage.deleteAll();
   }
 }
+
+//By Marl Laurence Soriano

@@ -56,3 +56,5 @@ class BiometricService {
     }
   }
 }
+
+//By Marl Laurence Soriano
