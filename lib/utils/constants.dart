@@ -21,3 +21,5 @@ class AppConstants {
   static const int pinkAccent = 0xFFFF00FF;
   static const int darkBg = 0xFF020408;
 }
+
+//Vera Bianca Domingquez
