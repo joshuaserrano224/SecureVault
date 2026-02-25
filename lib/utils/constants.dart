@@ -22,4 +22,4 @@ class AppConstants {
   static const int darkBg = 0xFF020408;
 }
 
-//Vera Bianca Domingquez
+//Vera Bianca Dominguez
