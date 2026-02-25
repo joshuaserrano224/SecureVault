@@ -37,6 +37,8 @@ Future<String?> getProvider() async {
 
 }
 
+
+
 Future<User?> silentLoginWithGoogle() async {
   try {
     // try to sign in silently (no popup)
@@ -200,3 +202,5 @@ Future<User?> silentLoginWithGoogle() async {
     await clearSession();
   }
 }
+
+//By Jeslito geverola 
