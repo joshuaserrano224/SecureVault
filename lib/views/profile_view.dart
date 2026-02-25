@@ -5,7 +5,7 @@ import '../viewmodels/profile_viewmodel.dart';
 import '../viewmodels/auth_viewmodel.dart';
 import '../views/login_view.dart';
 
-//By Reogie Mabawad
+
 
 class ProfileView extends StatelessWidget {
   const ProfileView({super.key});
@@ -307,3 +307,5 @@ class GridPainter extends CustomPainter {
   @override
   bool shouldRepaint(CustomPainter oldDelegate) => false;
 }
+
+//By Reogie Mabawad, design

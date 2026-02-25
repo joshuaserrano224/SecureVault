@@ -5,6 +5,8 @@ import '../viewmodels/auth_viewmodel.dart';
 import 'register_view.dart';
 import 'widgets/cyber_widgets.dart';
 
+
+
 class LoginView extends StatefulWidget {
   const LoginView({super.key});
 
@@ -304,3 +306,5 @@ class _LoginViewState extends State<LoginView> {
     ),
   );
 }
+
+//By Reogie Mabawad, design
