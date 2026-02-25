@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "64098096788",
+    "project_id": "vault-6bf8b",
+    "storage_bucket": "vault-6bf8b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:64098096788:android:f9ef1d4604d5d57f800681",
+        "android_client_info": {
+          "package_name": "com.example.secure_vault"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "64098096788-30ajckv5ldt77vcpu8oobcr05eraetbi.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.secure_vault",
+            "certificate_hash": "de15d078e10d29d97c4a06dc0623b31d739a6dea"
+          }
+        },
+        {
+          "client_id": "64098096788-aev0mrjacojop8mh1rufs5rvph11op84.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBQbEFtH8ZLym3VeU9SSYEINTZsudl5cPA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "64098096788-aev0mrjacojop8mh1rufs5rvph11op84.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
