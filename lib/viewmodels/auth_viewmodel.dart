@@ -22,6 +22,8 @@ class AuthViewModel extends ChangeNotifier {
   bool _isLoading = false;
   bool get isLoading => _isLoading;
 
+  String? _tempUID;
+
   String? _errorMessage;
   String? get errorMessage => _errorMessage;
 
@@ -47,51 +49,22 @@ class AuthViewModel extends ChangeNotifier {
   }
 
   void _showSnackBar(BuildContext context, String message, {bool isError = false}) {
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message, style: GoogleFonts.spaceGrotesk(color: Colors.white, fontSize: 12)),
-        backgroundColor: isError ? Colors.redAccent : const Color(0xFF0DA6F2),
-        behavior: SnackBarBehavior.floating,
+  // CRITICAL FIX: Only proceed if the widget still exists in the tree
+  if (!context.mounted) return; 
+
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(
+        message, 
+        style: GoogleFonts.spaceGrotesk(color: Colors.white, fontSize: 12)
       ),
-    );
-  }
-  
+      backgroundColor: isError ? Colors.redAccent : const Color(0xFF0DA6F2),
+      behavior: SnackBarBehavior.floating,
+    ),
+  );
+}
 
-  Future<void> verifyOTPAndAccess(BuildContext context) async {
-    if (otpController.text.trim() == _generatedOTP) {
-      _isLoading = true;
-      notifyListeners();
-
-      if (_auth.currentUser != null) {
-        await _db.collection('users').doc(_auth.currentUser!.uid).update({'otpVerified': true});
-      }
-
-      _isWaitingForOTP = false;
-      _generatedOTP = null;
-      otpController.clear();
-
-      if (context.mounted) {
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (context) => const ProfileView()),
-          (route) => false,
-        );
-      }
-    } else {
-      _showSnackBar(context, "Invalid Access Code.", isError: true);
-    }
-    _isLoading = false;
-    notifyListeners();
-  }
-
-  void cancelOTP() {
-    _isWaitingForOTP = false;
-    _generatedOTP = null;
-    otpController.clear();
-    _resendTimer?.cancel();
-    notifyListeners();
-  }
+ 
 
   void _startResendTimer() {
     _resendCountdown = 30;
@@ -109,14 +82,19 @@ class AuthViewModel extends ChangeNotifier {
   // --- UNTOUCHED ORIGINAL FUNCTIONS ---
 
   Future<void> handleLogin(BuildContext context) async {
-    bool success = await validateAndLogin(emailController.text.trim(), passwordController.text.trim());
-    if (success) {
-      _showSnackBar(context, "Identity Verified. Welcome Agent.");
-      Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const ProfileView()));
-    } else {
-      _showSnackBar(context, _errorMessage ?? "Auth Failure", isError: true);
-    }
+  bool success = await validateAndLogin(emailController.text.trim(), passwordController.text.trim());
+  if (success) {
+    _showSnackBar(context, "Identity Verified. Welcome Agent.");
+    
+    // --- CLEAR SENSITIVE INPUTS ---
+    emailController.clear();
+    passwordController.clear();
+    
+    Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const ProfileView()));
+  } else {
+    _showSnackBar(context, _errorMessage ?? "Auth Failure", isError: true);
   }
+}
 
   Future<void> handleBiometricLogin(BuildContext context) async {
     bool success = await loginWithBiometrics();
@@ -141,39 +119,53 @@ class AuthViewModel extends ChangeNotifier {
   return "no-email-provided";
 }
 
-Future<void> handleGoogleLogin(BuildContext context) async {
+  Future<void> handleGoogleLogin(BuildContext context) async {
   _isLoading = true;
   notifyListeners();
   try {
+    // 1. Get the Fresh Firebase User
     User? firebaseUser = await _authService.loginWithGoogle();
+    
     if (firebaseUser == null) {
       _isLoading = false;
       notifyListeners();
       return; 
     }
 
-    // FIX: Save provider IMMEDIATELY so biometrics knows this is a Google user
-    await _secureStorage.write(key: "login_provider", value: "google");
-
     final String uid = firebaseUser.uid;
-    final String email = _extractEmail(firebaseUser);
+    // Extract the actual email used in this specific login session
+    final String actualEmail = _extractEmail(firebaseUser); 
+    
     DocumentSnapshot userDoc = await _db.collection('users').doc(uid).get();
 
     if (!userDoc.exists) {
-      await _triggerOTPProtocol(context, email, uid, firebaseUser.displayName);
+      // NEW USER: Trigger OTP using the actual email from the Google session
+      await _triggerOTPProtocol(context, actualEmail, uid, firebaseUser.displayName, provider: 'google');
     } else {
       final userData = userDoc.data() as Map<String, dynamic>;
+      
+      // Verification Check
       if (userData['otpVerified'] == true) {
-        // TRACK PROVIDER FOR BIOMETRICS
         await _secureStorage.write(key: "login_provider", value: "google");
         
-        _currentUser = UserModel(id: uid, fullName: userData['fullName'] ?? "Agent", email: email);
-        if (context.mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const ProfileView()));
+        // Use the email from the DB to ensure consistency
+        _currentUser = UserModel(
+          id: uid, 
+          fullName: userData['fullName'] ?? firebaseUser.displayName ?? "Agent", 
+          email: userData['email'] ?? actualEmail
+        );
+        
+        if (context.mounted) {
+          Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const ProfileView()));
+        }
       } else {
-        await _triggerOTPProtocol(context, email, uid, firebaseUser.displayName);
+        // Exists but not verified: Trigger OTP
+        await _triggerOTPProtocol(context, actualEmail, uid, firebaseUser.displayName, provider: 'google');
       }
     }
   } catch (e) {
+    // If something goes wrong, sign out to prevent session hanging
+    await _authService.signOut();
     _showSnackBar(context, "Auth Protocol Failure.", isError: true);
   } finally {
     _isLoading = false;
@@ -211,91 +203,13 @@ Future<void> handleFacebookLogin(BuildContext context) async {
   }
 }
 
-Future<void> _triggerOTPProtocol(BuildContext context, String email, String uid, String? name) async {
-  try {
-    // 1. Save to DB first (This is fast)
-    await _db.collection('users').doc(uid).set({
-      'fullName': name ?? "Agent",
-      'email': email,
-      'otpVerified': false, 
-      'lastLogin': FieldValue.serverTimestamp(),
-      'provider': 'google',
-    }, SetOptions(merge: true));
-
-    // 2. Prepare UI for OTP input IMMEDIATELY
-    _isWaitingForOTP = true;
-    _startResendTimer();
-    notifyListeners(); // This shows the OTP UI so the app doesn't look frozen
-
-    // 3. Trigger Email in the background
-    if (email != "no-email-provided") {
-      try {
-        _generatedOTP = await _authService.sendEmailOTP(email);
-        _showSnackBar(context, "Security Code sent to $email");
-      } catch (e) {
-        print("MAILER ERROR: $e");
-        // Fallback for development if the SMTP server fails
-        _generatedOTP = "123456";
-        _showSnackBar(context, "Email failed. Using Debug Code: 123456", isError: true);
-      }
-    } else {
-      _generatedOTP = "123456"; 
-      _showSnackBar(context, "Manual Verification Required (Code: 123456)", isError: true);
-    }
-    
-    notifyListeners(); 
-  } catch (e) {
-    print("DATABASE SAVE ERROR: $e");
-    _showSnackBar(context, "Database write failed.", isError: true);
-  }
-}
-  
- 
-
-  // --- MANUAL REGISTER ---
-  Future<bool> register(String name, String email, String password) async {
-    _isLoading = true;
-    notifyListeners();
-    try {
-      // 1. Check if email exists in Firestore AT ALL
-      final existing = await _db.collection('users').where('email', isEqualTo: email).get();
-      if (existing.docs.isNotEmpty) {
-        _errorMessage = "Conflict: Email already registered.";
-        notifyListeners();
-        return false;
-      }
-
-      User? firebaseUser = await _authService.registerWithEmail(name, email, password);
-      if (firebaseUser != null) {
-        // Unified Save Format
-        await _db.collection('users').doc(firebaseUser.uid).set({
-          'fullName': name,
-          'email': email,
-          'otpVerified': true, 
-          'lastLogin': FieldValue.serverTimestamp(),
-          'provider': 'email',
-        });
-
-        _currentUser = UserModel(id: firebaseUser.uid, fullName: name, email: email);
-        return true;
-      }
-      return false;
-    } catch (e) {
-      _errorMessage = "Registration Failed.";
-      return false;
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
- 
- // REPLACE THE ENTIRE loginWithBiometrics
-Future<bool> loginWithBiometrics() async {
+  Future<bool> loginWithBiometrics() async {
   _isLoading = true;
   _errorMessage = null;
   notifyListeners();
+
   try {
-    // 1. Check Registry
+    // 1. Identify who this phone belongs to via the Hardware Registry
     String deviceId = await _biometricService.getDeviceId();
     DocumentSnapshot registryDoc = await _db.collection('biometric_registry').doc(deviceId).get();
     
@@ -304,55 +218,235 @@ Future<bool> loginWithBiometrics() async {
       return false;
     }
 
+    // 2. Fetch the actual account data from the 'users' collection
     String ownerId = registryDoc.get('userId');
     DocumentSnapshot userDoc = await _db.collection('users').doc(ownerId).get();
     
-    if (!userDoc.exists || !(userDoc.get('biometricEnabled') ?? false)) {
-      _errorMessage = "Biometric login disabled.";
+    if (!userDoc.exists) {
+      _errorMessage = "Account data not found.";
       return false;
     }
 
-    // 2. Hardware Auth
+    // 3. Check the biometric toggle
+    if (!(userDoc.get('biometricEnabled') ?? false)) {
+      _errorMessage = "Biometrics is turned off for this device.";
+      return false;
+    }
+
+    // 4. Perform the hardware scan
     String? authError = await _biometricService.authenticate();
     if (authError != null) {
       _errorMessage = authError;
       return false;
     }
 
-    // 3. Provider Check
-    String? provider = await _secureStorage.read(key: "login_provider");
+    // 5. THE FIX: Fetch EVERYTHING from the database doc
+    // This forces the email to be the one from the DB, not the Google ghost.
+    _currentUser = UserModel(
+      id: ownerId, 
+      fullName: userDoc.get('fullName') ?? "Authorized Agent", 
+      email: userDoc.get('email') ?? "No Email Linked" // Directly from DB
+    );
 
-    if (provider == "email") {
-      final email = await _secureStorage.read(key: "biometric_email");
-      final password = await _secureStorage.read(key: "biometric_password");
-      if (email == null || password == null) throw "Manual credentials missing.";
-      
-      UserCredential credential = await _auth.signInWithEmailAndPassword(email: email, password: password);
-      _currentUser = UserModel(id: credential.user!.uid, fullName: userDoc.get('fullName'), email: email);
-      
-    } else if (provider == "google") {
-      // Try silent first
-      User? user = await _authService.silentLoginWithGoogle();
-      
-      // If silent fails, force manual Google login
-      user ??= await _authService.loginWithGoogle();
-      
-      if (user == null) throw "Google authentication failed.";
-      _currentUser = UserModel(id: user.uid, fullName: user.displayName ?? "Agent", email: user.email ?? "");
-      
-    } else if (provider == "facebook") {
-      User? user = await _authService.loginWithFacebook();
-      if (user == null) throw "Facebook authentication failed.";
-      _currentUser = UserModel(id: user.uid, fullName: user.displayName ?? "Agent", email: user.email ?? "");
-    } else {
-      // If code reaches here, provider was likely cleared or never set
-      _errorMessage = "Manual login required to re-sync biometrics.";
-      return false;
-    }
+    // Update the last login time in the background
+    await _db.collection('users').doc(ownerId).update({
+      'lastLogin': FieldValue.serverTimestamp(),
+    });
 
     return true; 
+
   } catch (e) {
-    _errorMessage = "Access Denied: Protocol Breach.";
+    _errorMessage = "Access Denied: Identity Protocol Breach.";
+    return false;
+  } finally {
+    _isLoading = false;
+    notifyListeners();
+  }
+}
+
+Future<void> _triggerOTPProtocol(BuildContext context, String email, String uid, String? name, {String provider = 'google'}) async {
+  try {
+    // 1. CLEAR LOADING IMMEDIATELY
+    _isLoading = false;
+    _errorMessage = null;
+    notifyListeners(); // Force UI to remove any loading overlays
+
+    // 2. Set OTP State
+    _isWaitingForOTP = true;
+    _startResendTimer();
+    _tempName = name; 
+    _tempProvider = provider;
+    notifyListeners(); 
+
+    if (email != "no-email-provided") {
+      _generatedOTP = await _authService.sendEmailOTP(email);
+      if (_isWaitingForOTP) {
+        _showSnackBar(context, "Verification Code Transmitted to $email");
+      }
+    } else {
+      _generatedOTP = "123456"; 
+      _showSnackBar(context, "Manual Override Required (Dev Mode)", isError: true);
+    }
+  } catch (e) {
+    _isLoading = false;
+    _isWaitingForOTP = false;
+    notifyListeners();
+    _showSnackBar(context, "Protocol Transmission Failed.", isError: true);
+  }
+}
+
+// 2. Add a safeguard to the cancelOTP method
+Future<void> cancelOTP(BuildContext context) async {
+  // Prevent double-triggering
+  if (!_isWaitingForOTP) return;
+
+  _isLoading = true;
+  _isWaitingForOTP = false; // Set this to false IMMEDIATELY
+  _generatedOTP = null; 
+  notifyListeners();
+
+  try {
+    if (_auth.currentUser != null) {
+      await _auth.currentUser!.delete(); 
+    }
+    await _authService.signOut(); 
+    
+    await _secureStorage.delete(key: "temp_password");
+    await _secureStorage.delete(key: "temp_email");
+    
+    _showSnackBar(context, "Identity Registration Aborted.", isError: true);
+  } catch (e) {
+    debugPrint("Rollback Error: $e");
+  } finally {
+    _isLoading = false;
+    otpController.clear();
+    notifyListeners();
+  }
+}
+// 3. UPDATED VERIFY: Save to Database ONLY when OTP is correct
+String? _tempName;
+String? _tempProvider;
+
+Future<void> verifyOTPAndAccess(BuildContext context) async {
+  // 1. Check if the controller actually has text and if we have a code to check against
+  String enteredCode = otpController.text.trim();
+  
+  if (enteredCode.isEmpty) {
+    _showSnackBar(context, "Please enter the verification code.", isError: true);
+    return;
+  }
+
+  if (enteredCode == _generatedOTP) {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final user = _auth.currentUser;
+      if (user != null) {
+        // SAVE TO FIRESTORE
+        await _db.collection('users').doc(user.uid).set({
+          'fullName': _tempName ?? "Agent",
+          'email': user.email,
+          'otpVerified': true,
+          'lastLogin': FieldValue.serverTimestamp(),
+          'provider': _tempProvider ?? 'email',
+          'biometricEnabled': false, // Initialize this to avoid null errors later
+        }, SetOptions(merge: true));
+
+        // LOCK IN PROVIDER
+        await _secureStorage.write(key: "login_provider", value: _tempProvider);
+        
+        if (_tempProvider == 'email') {
+          String? tPass = await _secureStorage.read(key: "temp_password");
+          if (tPass != null) await _secureStorage.write(key: "biometric_password", value: tPass);
+          await _secureStorage.write(key: "biometric_email", value: user.email);
+        }
+
+        _currentUser = UserModel(
+          id: user.uid, 
+          fullName: _tempName ?? "Agent", 
+          email: user.email ?? ""
+        );
+
+        // Success cleanup
+        _isWaitingForOTP = false;
+        _generatedOTP = null;
+        otpController.clear();
+        
+        _showSnackBar(context, "Identity Secured. Profile Established.");
+
+        if (context.mounted) {
+          // Use pushAndRemoveUntil to clear the stack so they can't go back to the register page
+          Navigator.pushAndRemoveUntil(
+            context, 
+            MaterialPageRoute(builder: (context) => const ProfileView()), 
+            (route) => false
+          );
+        }
+      } else {
+        _showSnackBar(context, "Session Expired. Please retry registration.", isError: true);
+      }
+    } catch (e) {
+      _showSnackBar(context, "Database Protocol Failure.", isError: true);
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  } else {
+    _showSnackBar(context, "Invalid Access Code. Verification Failed.", isError: true);
+  }
+}
+
+Future<bool> register(BuildContext context, String name, String email, String password) async {
+  _isLoading = true;
+  _errorMessage = null;
+  notifyListeners();
+
+  try {
+    // 1. THE SECURITY CHECK: Look for ANY existing verified account with this email
+    // This catches Google, Facebook, and previous Manual registrations
+    final existing = await _db.collection('users')
+        .where('email', isEqualTo: email)
+        .where('otpVerified', isEqualTo: true)
+        .get();
+    
+    if (existing.docs.isNotEmpty) {
+      final userData = existing.docs.first.data();
+      final provider = userData['provider'] ?? 'another method';
+      
+      // Inform the user specifically how they previously registered
+      _errorMessage = "Identity already active via $provider. Please Login.";
+      _isLoading = false;
+      notifyListeners();
+      return false; // STOPS HERE: No OTP is sent
+    }
+
+    // 2. FIREBASE LAYER: Register or Login if they exist but aren't verified yet
+    User? firebaseUser;
+    try {
+      firebaseUser = await _authService.registerWithEmail(name, email, password);
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'email-already-in-use') {
+        // User exists in Firebase but failed the 'otpVerified' check in step 1
+        firebaseUser = await _authService.loginWithEmail(email, password);
+      } else { rethrow; }
+    }
+    
+    if (firebaseUser != null) {
+      _tempUID = firebaseUser.uid; 
+      
+      // 3. SECURE STAGING: Prepare for Biometric Key migration later
+      await _secureStorage.write(key: "temp_email", value: email);
+      await _secureStorage.write(key: "temp_password", value: password);
+      await _secureStorage.write(key: "temp_provider", value: "email");
+
+      // 4. TRIGGER OTP: Only happens if no verified account was found in step 1
+      await _triggerOTPProtocol(context, email, firebaseUser.uid, name, provider: 'email');
+      return true;
+    }
+    return false;
+  } catch (e) {
+    _errorMessage = "Registration Protocol Failed.";
     return false;
   } finally {
     _isLoading = false;
@@ -405,12 +499,18 @@ Future<bool> loginWithBiometrics() async {
     });
   }
 
-  Future<void> logout() async {
-    await _authService.signOut();
-    await _authService.clearSession();
-    _currentUser = null;
-    notifyListeners();
-  }
+ Future<void> logout() async {
+  await _authService.signOut();
+  await _authService.clearSession();
+  
+  // ADD THIS: Clear the provider tracking so biometrics doesn't "remember" Facebook
+  await _secureStorage.delete(key: "login_provider");
+  await _secureStorage.delete(key: "biometric_email");
+  await _secureStorage.delete(key: "biometric_password");
+
+  _currentUser = null;
+  notifyListeners();
+}
 
   Future<bool> _performAuthAction(Future<bool> Function() action) async {
     _isLoading = true;

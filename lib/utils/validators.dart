@@ -1,24 +1,23 @@
 class Validators {
-  /// Validates password strength (M2 Requirement)
-  /// Min 8 chars, 1 Uppercase, 1 Special Char
+  
   static String? validatePassword(String? value) {
     if (value == null || value.isEmpty) {
       return 'Password is required';
     }
-    
-    // Length check
-    if (value.length < 8) {
-      return 'Min. 8 characters required';
-    }
 
-    // Uppercase check
-    if (!value.contains(RegExp(r'[A-Z]'))) {
-      return 'At least one uppercase letter required';
-    }
+    final passwordRegex = RegExp(
+      r'^(?=.*[A-Z])(?=.*[a-z])(?=.*?[0-9])(?=.*?[!@#\$&*~]).{8,}$'
+    );
 
-    // Special character check
-    if (!value.contains(RegExp(r'[!@#$%^&*(),.?":{}|<>]'))) {
-      return 'At least one special character required';
+    if (!passwordRegex.hasMatch(value)) {
+      // Detailed feedback helps the user (and the instructor) know why it failed
+      if (value.length < 8) return 'Min. 8 characters required';
+      if (!value.contains(RegExp(r'[A-Z]'))) return 'One uppercase letter required';
+      if (!value.contains(RegExp(r'[a-z]'))) return 'One lowercase letter required';
+      if (!value.contains(RegExp(r'[0-9]'))) return 'At least one number required';
+      if (!value.contains(RegExp(r'[!@#\$&*~]'))) return 'One special character required';
+      
+      return 'Password does not meet security requirements';
     }
 
     return null; // Valid
@@ -40,6 +39,9 @@ class Validators {
   static String? validateName(String? value) {
     if (value == null || value.isEmpty) {
       return 'Name is required';
+    }
+    if (value.trim().split(' ').length < 2) {
+      return 'Please enter your full name';
     }
     return null;
   }

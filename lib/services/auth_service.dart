@@ -12,9 +12,7 @@ class AuthService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
   final GoogleSignIn _googleSignIn = GoogleSignIn();
-
   
-
   // --- M3 REQUIREMENT: SECURE STORAGE ---
 
   Future<void> saveToken(String token) async {
@@ -65,31 +63,30 @@ Future<User?> silentLoginWithGoogle() async {
 
   // --- FIREBASE AUTH METHODS ---
 
-  Future<User?> registerWithEmail(String name, String email, String password) async {
-    try {
-      UserCredential result = await _auth.createUserWithEmailAndPassword(
-        email: email, 
-        password: password
-      );
+ Future<User?> registerWithEmail(String name, String email, String password) async {
+  try {
+    // 1. Create the user in Firebase Auth only
+    UserCredential result = await _auth.createUserWithEmailAndPassword(
+      email: email, 
+      password: password
+    );
+    
+    User? user = result.user;
+
+    if (user != null) {
+      // 2. Set the display name for the Auth profile
+      await user.updateDisplayName(name);
+
       
-      User? user = result.user;
 
-      if (user != null) {
-        await user.updateDisplayName(name);
-        await _db.collection('users').doc(user.uid).set({
-          'fullName': name,
-          'email': email,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-
-        String? token = await user.getIdToken();
-        if (token != null) await saveToken(token);
-      }
-      return user;
-    } catch (e) {
-      rethrow; 
+      String? token = await user.getIdToken();
+      if (token != null) await saveToken(token);
     }
+    return user;
+  } catch (e) {
+    rethrow; 
   }
+}
 
   Future<User?> loginWithGoogle() async {
   try {

@@ -54,73 +54,88 @@ class _LoginViewState extends State<LoginView> {
 
   
   void _showOTPModal(BuildContext context, AuthViewModel authVM) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      isDismissible: false,
-      enableDrag: false,
-      builder: (context) => Container(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom + 30,
-          left: 30, right: 30, top: 30,
-        ),
-        decoration: const BoxDecoration(
-          color: darkBg,
-          border: Border(top: BorderSide(color: cyanPrimary, width: 2)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildLabelRow("SECURITY CLEARANCE", "ONE-TIME VERIFICATION"),
-            const SizedBox(height: 10),
-            CyberInput(
-              controller: authVM.otpController,
-              hint: "X - X - X - X - X - X",
-              icon: Icons.security,
-              accent: pinkAccent,
-            ),
-            const SizedBox(height: 20),
-            Consumer<AuthViewModel>(
-              builder: (context, vm, _) => Text(
-                vm.canResend 
-                    ? "RESEND CODE AVAILABLE" 
-                    : "RESEND IN ${vm.resendCountdown}s",
-                style: GoogleFonts.spaceGrotesk(
-                  color: vm.canResend ? cyanPrimary : Colors.white24,
-                  fontSize: 10, fontWeight: FontWeight.bold,
-                ),
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    isDismissible: false,
+    enableDrag: false,
+    builder: (context) => Container(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom + 30,
+        left: 30, right: 30, top: 30,
+      ),
+      decoration: const BoxDecoration(
+        color: darkBg,
+        border: Border(top: BorderSide(color: cyanPrimary, width: 2)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildLabelRow("SECURITY CLEARANCE", "ONE-TIME VERIFICATION"),
+          const SizedBox(height: 10),
+          CyberInput(
+            controller: authVM.otpController,
+            hint: "X - X - X - X - X - X",
+            icon: Icons.security,
+            accent: pinkAccent,
+          ),
+          const SizedBox(height: 20),
+          Consumer<AuthViewModel>(
+            builder: (context, vm, _) => Text(
+              vm.canResend 
+                  ? "RESEND CODE AVAILABLE" 
+                  : "RESEND IN ${vm.resendCountdown}s",
+              style: GoogleFonts.spaceGrotesk(
+                color: vm.canResend ? cyanPrimary : Colors.white24,
+                fontSize: 10, fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 30),
-            authVM.isLoading 
-              ? const CircularProgressIndicator(color: pinkAccent)
-              : Row(
-                  children: [
-                    Expanded(
-                      child: _buildSecondaryButton("ABORT", 
-                        icon: Icons.close, color: Colors.redAccent, 
-                        onTap: () {
-                          authVM.cancelOTP();
-                          Navigator.pop(context);
-                        }),
-                    ),
-                    const SizedBox(width: 10),
-                   // Inside _showOTPModal in LoginView.dart
-                        Expanded(
+          ),
+          const SizedBox(height: 30),
+          // Using a Consumer here ensures the button specifically updates its UI 
+          // when AuthViewModel calls notifyListeners()
+          Consumer<AuthViewModel>(
+            builder: (context, vm, _) {
+              return vm.isLoading 
+                ? const CircularProgressIndicator(color: pinkAccent)
+                : Row(
+                    children: [
+                      Expanded(
+                        child: _buildSecondaryButton(
+                          "ABORT", 
+                          icon: Icons.close, 
+                          color: Colors.redAccent, 
+                          onTap: () {
+                            vm.cancelOTP(context);
+                            Navigator.pop(context);
+                          }
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Material( // CRITICAL: Gives the InkWell a surface to click on
+                          color: Colors.transparent,
                           child: _buildPrimaryButton(
                             "CONFIRM", 
                             Icons.vpn_key_outlined, 
-                            onTap: () => authVM.verifyOTPAndAccess(context), // Just pass the context and let VM work
+                            onTap: () {
+                              // DISMISS KEYBOARD: Prevents the keyboard from eating the tap event
+                              FocusManager.instance.primaryFocus?.unfocus();
+                              vm.verifyOTPAndAccess(context);
+                            }, 
                           ),
                         ),
-                  ],
-                ),
-          ],
-        ),
+                      ),
+                    ],
+                  );
+            },
+          ),
+        ],
       ),
-    ).then((_) => _isModalOpen = false);
-  }
+    ),
+  ).then((_) => _isModalOpen = false);
+}
 
   @override
   Widget build(BuildContext context) {
@@ -149,7 +164,7 @@ class _LoginViewState extends State<LoginView> {
                     accent: cyanPrimary,
                   ),
                   const SizedBox(height: 25),
-                  _buildLabelRow("PASSWORD", "Forgot Password?", isAction: true),
+                  _buildLabelRow("PASSWORD", "", isAction: true),
                   CyberInput(
                     controller: authVM.passwordController,
                     hint: "Enter your password",

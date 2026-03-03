@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="facebook_app_id">YOUR_FB_APP_ID</string>
-    <string name="fb_login_protocol_scheme">fbYOUR_FB_APP_ID</string>
-    <string name="facebook_client_token">YOUR_CLIENT_TOKEN</string>
+    <string name="facebook_app_id">1651939826251015</string>
+    <string name="fb_login_protocol_scheme">fb1651939826251015</string>
+    <string name="facebook_client_token">da7c5dd238c3ba51c08983ad0eccb65a</string>
     
     <string name="app_name">Secure Vault</string>
 </resources>

@@ -5,11 +5,14 @@ import '../viewmodels/profile_viewmodel.dart';
 import '../viewmodels/auth_viewmodel.dart';
 import '../views/login_view.dart';
 
-
-
-class ProfileView extends StatelessWidget {
+class ProfileView extends StatefulWidget {
   const ProfileView({super.key});
 
+  @override
+  State<ProfileView> createState() => _ProfileViewState();
+}
+
+class _ProfileViewState extends State<ProfileView> with WidgetsBindingObserver {
   static const Color primaryCyan = Color(0xFF0DA6F2);
   static const Color accentGreen = Color(0xFF00FF9D);
   static const Color accentRed = Color(0xFFFF003C);
@@ -18,17 +21,66 @@ class ProfileView extends StatelessWidget {
   static const Color cardBgDark = Color(0x660F172A);
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<ProfileViewModel>().resetInactivityTimer();
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Detect when the app is no longer in the foreground
+    final bool minimized = state != AppLifecycleState.resumed;
+    context.read<ProfileViewModel>().setMinimized(minimized);
+  }
+
+  void _handleAutoLogout(ProfileViewModel vm) async {
+    await vm.signOut();
+    if (!mounted) return;
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (context) => const LoginView()),
+      (route) => false,
+    );
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("SESSION TIMEOUT: INACTIVITY DETECTED",
+          style: GoogleFonts.jetBrainsMono(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+        backgroundColor: accentRed,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     final authVM = Provider.of<AuthViewModel>(context, listen: false);
     final profileVM = Provider.of<ProfileViewModel>(context);
 
-    // --- TRIGGER SYNC & ERRORS ---
+    // 1. SECURITY BLACKOUT CHECK
+    if (profileVM.isMinimized) {
+      return Scaffold(
+        backgroundColor: profileVM.isDarkMode ? darkBg : lightBg,
+        body: const SizedBox.expand(),
+      );
+    }
+
+    // 2. TIMEOUT CHECK
+    if (profileVM.isSessionExpired) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _handleAutoLogout(profileVM));
+    }
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       profileVM.syncProfileState(authVM.currentUser?.id);
-      
-      if (profileVM.errorMessage != null) {
-        _showErrorSnackBar(context, profileVM);
-      }
+      if (profileVM.errorMessage != null) _showErrorSnackBar(context, profileVM);
     });
 
     final bool isDark = profileVM.isDarkMode;
@@ -36,86 +88,78 @@ class ProfileView extends StatelessWidget {
     final Color textColor = isDark ? Colors.white : const Color(0xFF1E293B);
     final Color subTextColor = isDark ? Colors.white38 : Colors.black45;
 
-    return Scaffold(
-      backgroundColor: scaffoldBg,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: Opacity(
-              opacity: isDark ? 0.05 : 0.2,
-              child: CustomPaint(painter: GridPainter(color: isDark ? Colors.white : Colors.black12)),
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (_) => profileVM.resetInactivityTimer(),
+      child: Scaffold(
+        backgroundColor: scaffoldBg,
+        body: Stack(
+          children: [
+            Positioned.fill(
+              child: Opacity(
+                opacity: isDark ? 0.05 : 0.2,
+                child: CustomPaint(painter: GridPainter(color: isDark ? Colors.white : Colors.black12)),
+              ),
             ),
-          ),
-          SafeArea(
-            child: Column(
-              children: [
-                _buildHeader(isDark, textColor),
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 30),
-                        _buildUserHero(context, profileVM, isDark, textColor, subTextColor),
-                        const SizedBox(height: 40),
-                        _buildSectionHeader("Security"),
-                        _buildDataCard([
-                          _buildSwitchRow(
-                            "Biometric Access",
-                            "Fingerprint enrollment",
-                            profileVM.biometricEnabled,
-                            isDark, textColor, subTextColor,
-                            () => profileVM.toggleBiometricSupport(!profileVM.biometricEnabled, authVM.currentUser?.id),
-                          ),
-                        ], isDark),
-                        const SizedBox(height: 30),
-                        _buildSectionHeader("Appearance"),
-                        _buildDataCard([
-                          _buildSwitchRow(
-                            "Dark Mode",
-                            "Toggle system interface",
-                            isDark,
-                            isDark, textColor, subTextColor,
-                            () => profileVM.toggleDarkMode(),
-                          ),
-                        ], isDark),
-                      ],
+            SafeArea(
+              child: Column(
+                children: [
+                  _buildHeader(isDark, textColor),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 30),
+                          _buildUserHero(context, profileVM, isDark, textColor, subTextColor),
+                          const SizedBox(height: 40),
+                          _buildSectionHeader("Security"),
+                          _buildDataCard([
+                            _buildSwitchRow(
+                              "Biometric Access", "Fingerprint enrollment",
+                              profileVM.biometricEnabled, isDark, textColor, subTextColor,
+                              () => profileVM.toggleBiometricSupport(!profileVM.biometricEnabled, authVM.currentUser?.id),
+                            ),
+                          ], isDark),
+                          const SizedBox(height: 30),
+                          _buildSectionHeader("Appearance"),
+                          _buildDataCard([
+                            _buildSwitchRow(
+                              "Dark Mode", "Toggle system interface",
+                              isDark, isDark, textColor, subTextColor,
+                              () => profileVM.toggleDarkMode(),
+                            ),
+                          ], isDark),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 20),
-                  child: _buildLogoutButton(context, profileVM, isDark),
-                ),
-              ],
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 20),
+                    child: _buildLogoutButton(context, profileVM, isDark),
+                  ),
+                ],
+              ),
             ),
-          ),
-          if (profileVM.isLoading) _buildLoader(),
-        ],
+            if (profileVM.isLoading) _buildLoader(),
+          ],
+        ),
       ),
     );
   }
 
+  // --- UI HELPERS ---
   void _showErrorSnackBar(BuildContext context, ProfileViewModel vm) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(vm.errorMessage!, style: GoogleFonts.jetBrainsMono(fontSize: 12)),
-        backgroundColor: accentRed,
-        behavior: SnackBarBehavior.floating,
-      ),
+      SnackBar(content: Text(vm.errorMessage!, style: GoogleFonts.jetBrainsMono(fontSize: 12)),
+        backgroundColor: accentRed, behavior: SnackBarBehavior.floating),
     );
     vm.clearError();
   }
 
-  Widget _buildLoader() {
-    return Container(
-      color: Colors.black54,
-      child: const Center(child: CircularProgressIndicator(color: primaryCyan)),
-    );
-  }
+  Widget _buildLoader() => Container(color: Colors.black54, child: const Center(child: CircularProgressIndicator(color: primaryCyan)));
 
-  // UI Components remain largely the same, but cleaner parameter passing
   Widget _buildHeader(bool isDark, Color textColor) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
@@ -138,13 +182,8 @@ class ProfileView extends StatelessWidget {
   Widget _buildBadge(bool isDark) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: accentGreen.withOpacity(0.1),
-        border: Border.all(color: accentGreen.withOpacity(0.3)),
-      ),
-      child: Text("VERIFIED",
-          style: GoogleFonts.jetBrainsMono(
-              color: isDark ? accentGreen : Colors.green[700], fontSize: 9, fontWeight: FontWeight.bold)),
+      decoration: BoxDecoration(color: accentGreen.withOpacity(0.1), border: Border.all(color: accentGreen.withOpacity(0.3))),
+      child: Text("VERIFIED", style: GoogleFonts.jetBrainsMono(color: isDark ? accentGreen : Colors.green[700], fontSize: 9, fontWeight: FontWeight.bold)),
     );
   }
 
@@ -154,9 +193,7 @@ class ProfileView extends StatelessWidget {
         Container(
           height: 80, width: 80,
           decoration: BoxDecoration(border: Border.all(color: primaryCyan, width: 2), color: isDark ? const Color(0xFF1E293B) : Colors.white),
-          child: Center(
-            child: Text(vm.getInitials(), style: GoogleFonts.orbitron(color: primaryCyan, fontSize: 24, fontWeight: FontWeight.bold)),
-          ),
+          child: Center(child: Text(vm.getInitials(), style: GoogleFonts.orbitron(color: primaryCyan, fontSize: 24, fontWeight: FontWeight.bold))),
         ),
         const SizedBox(width: 20),
         Expanded(
@@ -165,14 +202,7 @@ class ProfileView extends StatelessWidget {
             children: [
               Text("NAME", style: GoogleFonts.jetBrainsMono(color: subTextColor, fontSize: 10)),
               Text(vm.displayName, style: GoogleFonts.jetBrainsMono(color: isDark ? primaryCyan : const Color(0xFF0F172A), fontSize: 18, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
-                          // Use your custom 'email' getter which performs the deep search for Google/Facebook
-                Text(
-                  vm.email, 
-                  style: GoogleFonts.jetBrainsMono(
-                    color: isDark ? Colors.white70 : Colors.black87, 
-                    fontSize: 11
-                  )
-                ),
+              Text(vm.email, style: GoogleFonts.jetBrainsMono(color: isDark ? Colors.white70 : Colors.black87, fontSize: 11)),
               const SizedBox(height: 10),
               InkWell(
                 onTap: () => _showEditDialog(context, vm, isDark),
@@ -198,10 +228,7 @@ class ProfileView extends StatelessWidget {
   Widget _buildDataCard(List<Widget> children, bool isDark) {
     return Container(
       margin: const EdgeInsets.only(top: 15),
-      decoration: BoxDecoration(
-        color: isDark ? cardBgDark : Colors.white,
-        border: Border.all(color: primaryCyan.withOpacity(0.1)),
-      ),
+      decoration: BoxDecoration(color: isDark ? cardBgDark : Colors.white, border: Border.all(color: primaryCyan.withOpacity(0.1))),
       child: Column(children: children),
     );
   }
@@ -307,5 +334,3 @@ class GridPainter extends CustomPainter {
   @override
   bool shouldRepaint(CustomPainter oldDelegate) => false;
 }
-
-//By Reogie Mabawad, design

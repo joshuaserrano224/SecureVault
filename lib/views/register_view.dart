@@ -42,9 +42,17 @@ class _RegisterViewState extends State<RegisterView> {
       return;
     }
 
-    bool success = await authVM.register(_nameController.text, _emailController.text, _passwordController.text);
-    if (success) {
-      _showSnackBar("Identity Secured. Access Granted.");
+    // This triggers the OTP process
+    bool started = await authVM.register(
+      context, 
+      _nameController.text, 
+      _emailController.text, 
+      _passwordController.text
+    );
+
+    if (started) {
+      // We don't show "Access Granted" here anymore!
+      // The ViewModel will show "Security Code sent to [email]" automatically.
     } else {
       _showSnackBar(authVM.errorMessage ?? "Registration Failed", isError: true);
     }
@@ -95,7 +103,7 @@ class _RegisterViewState extends State<RegisterView> {
                     accent: cyanPrimary,
                   ),
                   const SizedBox(height: 25), // Matched Login spacing
-                  _buildLabelRow("CREATE PASSWORD", "STRENGTH: HIGH"),
+                  _buildLabelRow("CREATE PASSWORD", ""),
                   CyberInput(
                     controller: _passwordController,
                     hint: "Min. 8 characters + Symbol",
