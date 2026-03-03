@@ -1,16 +1,22 @@
-# secure_vault
+SecureVault Identity System
 
-A new Flutter project.
+Advanced Mobile Development (ITMSD5) | Laboratory Exercise: Secure Design Patterns
 
-## Getting Started
+SecureVault is a high-security mobile authentication framework built with Flutter and Firebase. This project strictly implements the MVVM (Model-View-ViewModel) architecture to ensure a clean separation between UI and complex security logic.
 
-This project is a starting point for a Flutter application.
+👥 Team Members & Roles
 
-A few resources to get you started if this is your first Flutter project:
+Member 1: Joshua Serrano – Lead Architect & Navigation
+Responsibilities: Project initialization, Folder Structure setup, Named Routing in main.dart, and MultiProvider configuration.
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+Member 2: Jeslito Geverola – Core Auth Developer
+Responsibilities: AuthViewModel logic, implementation of manual Registration/Login flows, and state management (isLoading/errorMessage).
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Member 3: Marl Laurence Soriano – Security Engineer
+Responsibilities: Secure Storage implementation via flutter_secure_storage, BiometricService (local_auth), and Regex validation for strong passwords.
+
+Member 4: Reogie Mabawad – UI/UX Designer
+Responsibilities: Building LoginView, RegisterView, and ProfileView; connecting UI to ViewModels using Consumer; and implementing loading spinners/SnackBars.
+
+Member 5: Vera Bianca Dominguez – Integration Specialist
+Responsibilities: Google Sign-In and Facebook Login integration (SSO), Profile Edit feature persistence, and QA testing.
